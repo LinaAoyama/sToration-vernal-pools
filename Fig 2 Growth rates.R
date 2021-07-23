@@ -3,6 +3,8 @@
 # Set your data pathway first!
 
 # Data 
+source("compile_composition.R")
+source("prep data before modeling.R")
 # Go to "Constructed pools model.R" for lambda values in restored pools
 # Go to "Reference pools model.R" for lambda values in reference pools 
 # Go to "Fig 3 GRWR partitioning.R" for GRWR values
