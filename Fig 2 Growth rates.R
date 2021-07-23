@@ -3,19 +3,14 @@
 # Set your data pathway first!
 
 # Data 
-# Go to "analysis/complex_belowground_v5.R" for lambda values in restored pools
-# Go to "analysis/reference_pool_model.R" for lambda values in reference pools 
-# Go to "analysis/GRWR_invader.R" for GRWR values
+# Go to "Constructed pools model.R" for lambda values in restored pools
+# Go to "Reference pools model.R" for lambda values in reference pools 
+# Go to "Fig 3 GRWR partitioning.R" for GRWR values
 
 # Packages
 library(ggplot2)
 library(ggpubr)
 library(HDInterval)
-
-# Function for standard error
-se <- function(x){
-  sd(x)/sqrt(length(x))# this is a function for calculating standard error
-} 
 
 # Visualize timeseries of predicted LACO lambda 
 Post_ref_00_01 <- rstan::extract(BH_ref_fit) #Run the model with 2000-2015 data (7 pools)
