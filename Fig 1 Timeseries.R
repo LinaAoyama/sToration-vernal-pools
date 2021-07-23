@@ -3,7 +3,8 @@
 # Set your data pathway first!
 
 # Data
-source("prep data before modeling.R") #Get data on LACO abundance and exotic grass cover
+source("compile_composition.R")
+source("prep data before modeling.R")
 PPT <- read_csv(paste(datpath, "Monthly precip averages/Fairfield_precip.csv", sep="")) #Get precip data
 
 # Packages
