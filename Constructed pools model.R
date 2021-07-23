@@ -1,13 +1,18 @@
-# Model LACO stem counts with storage effect and environmental fluctuations 
-# Multiple year seeding addition
-# Recursive modeling of seedbank to account for years where aboveground LACO is zero but seedbank persists to next year
-# Germination rate of LACO depends on the previous year's exotic grass cover
-# Germination rate is now a constant input, not an output.
+# Model LACO stem counts with belowground dynamics and environmental fluctuations 
+## Parameterize lambda, alphas, and survival rate of LACO
+## Multiple year seeding addition
+## Recursive modeling of seedbank to account for years where aboveground LACO is zero but seedbank persists to next year
+## Germination rate of LACO depends on the previous year's exotic grass cover
+## Germination rate is a constant input, not an output
 
 # load packages
 library(dplyr)
 library(rstan)
 library(StanHeaders)
+
+# load data
+# Remember to set your data pathway first!
+source("compile_composition.R") 
 
 ### CREATE SIMULATED DATA ###
 
