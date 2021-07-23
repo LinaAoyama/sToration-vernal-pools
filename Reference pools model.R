@@ -1,12 +1,17 @@
 # POPULATION MODEL FOR LACO IN REFERENCE POOLS
-# Model LACO stem counts with storage effect and environmental fluctuations 
-# Recursive modeling of seedbank to account for years where aboveground LACO is zero but seedbank persists to next year
-# Germination rate of LACO depends on the previous year's exotic grass cover
+## Parameterize lambda, alphas, and survival rate of LACO 
+## Model LACO stem counts with belowground dynamics and environmental fluctuations 
+## Recursive modeling of seedbank to account for years where aboveground LACO is zero but seedbank persists to next year
+## Germination rate of LACO depends on the previous year's exotic grass cover
 
 # load packages
 library(dplyr)
 library(rstan)
 library(StanHeaders)
+
+# load data
+# Remember to set your data pathway first!
+source("compile_composition.R") 
 
 ### CREATE SIMULATED DATA ###
 
