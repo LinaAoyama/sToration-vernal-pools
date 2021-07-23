@@ -2,10 +2,13 @@
 # According to field observation from Akasha, LACO germination is very low when there is high litter cover.
 # We can incorporate this dynamic in the model by changing the germination rate depending on previous year's exotic grass cover.
 
-
-source("data_wrangling/prep data before modeling.R")
+# Packages
 library(ggplot2)
 library(gridExtra)
+
+# Data
+source("compile_composition.R")
+source("prep data before modeling.R")
 
 #EG group - LOMU, BRHO, HOMA
 ggplot(const_dummy_join, aes(x = sum_EG, y = LACOdens)) +
