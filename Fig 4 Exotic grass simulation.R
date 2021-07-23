@@ -14,8 +14,8 @@ library(StanHeaders)
 # Remember to set your data pathway first!
 
 # Data
-source("compile_composition.R") 
-# Run "prep data before modeling.R"
+source("compile_composition.R")
+source("prep data before modeling.R")
 
 #Extract parameters for constructed pools
 # Run "Constructed pools model.R"
