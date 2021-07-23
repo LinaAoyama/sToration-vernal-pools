@@ -1,4 +1,4 @@
-## Make sure to manually set your data pathway in set_pathway.R first!!
+## Make sure to manually set your data pathway first!!
 
 library(tidyverse)
 
