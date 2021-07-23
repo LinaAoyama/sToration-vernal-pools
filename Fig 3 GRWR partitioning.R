@@ -3,11 +3,12 @@
 #II. r_invader partitioning
 
 # Remember to set your data pathway first!
-# Run "Reference pools model.R" and "Constructed pools model.R" for parameter estimates
 
 # Data
 source("compile_composition.R")
 source("prep data before modeling.R")
+
+# Run "Reference pools model.R" and "Constructed pools model.R" for parameter estimates
 
 # Packages
 library(rstan)
