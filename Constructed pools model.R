@@ -13,6 +13,7 @@ library(StanHeaders)
 # load data
 # Remember to set your data pathway first!
 source("compile_composition.R") 
+source("prep data before modeling.R")
 
 ### CREATE SIMULATED DATA ###
 
