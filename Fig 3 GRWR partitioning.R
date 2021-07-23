@@ -3,9 +3,10 @@
 #II. r_invader partitioning
 
 # Remember to set your data pathway first!
+# Run "Reference pools model.R" and "Constructed pools model.R" for parameter estimates
 
 # Data
-source("data_compiling/compile_composition.R") 
+source("compile_composition.R") 
 
 # Packages
 library(rstan)
@@ -49,7 +50,7 @@ const_com_control <- const_com %>% #use constructed pools data
 
 #Step 2. Calculate the annual growth rate of LACO in restored pools when one LACO is introduced into a stable community.
 
-#Extract parameters for restored pools. Run "analysis/complex_belowground_v5.R".
+#Extract parameters for restored pools. Run "Constructed pools model.R".
 Post <- rstan::extract(BH_fit)
 alpha_LACO <- as.matrix(Post$alpha_LACO)
 alpha_EG <- as.matrix(Post$alpha_EG)
@@ -92,7 +93,7 @@ GRWR_LACO_const <- log(LACO_const) #2000-2016
 
 #Step 3. Do the same step for the reference pools.
 
-#Extract parameters for reference pools. Run "analysis/reference_pool_model.R".
+#Extract parameters for reference pools. Run "Reference pools model.R".
 Post_ref <- rstan::extract(BH_ref_fit)
 refalpha_LACO <- as.matrix(Post_ref$alpha_LACO)
 refalpha_EG <- as.matrix(Post_ref$alpha_EG)
