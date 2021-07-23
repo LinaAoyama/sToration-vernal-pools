@@ -1,7 +1,4 @@
-#####################################################
-#Would adaptive management improve LACO populations?#
-#####################################################
-#Goal: Simulate exotic grasses (EG) removal to promote LACO persistence
+#Simulate exotic grasses (EG) removal to promote LACO persistence
 
 #Step 1. Simulate EG removal
 #Step 2. Average the growth rates of LACO over time for all simulation scenarios
@@ -17,11 +14,11 @@ library(StanHeaders)
 # Remember to set your data pathway first!
 
 # Data
-source("data_compiling/compile_composition.R") 
-# Run "data_wrangling/prep data before modeling.R"
+source("compile_composition.R") 
+# Run "prep data before modeling.R"
 
 #Extract parameters for constructed pools
-# Run "analysis/complex_belowground_v5.R"
+# Run "Constructed pools model.R"
 Post <- rstan::extract(BH_fit)
 alpha_LACO <- as.matrix(Post$alpha_LACO)
 alpha_EG <- as.matrix(Post$alpha_EG)
