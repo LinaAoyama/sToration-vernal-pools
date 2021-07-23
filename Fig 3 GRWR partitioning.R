@@ -6,7 +6,8 @@
 # Run "Reference pools model.R" and "Constructed pools model.R" for parameter estimates
 
 # Data
-source("compile_composition.R") 
+source("compile_composition.R")
+source("prep data before modeling.R")
 
 # Packages
 library(rstan)
