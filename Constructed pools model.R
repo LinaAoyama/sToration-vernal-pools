@@ -10,113 +10,119 @@ library(dplyr)
 library(rstan)
 library(StanHeaders)
 
-# load data
-# Remember to set your data pathway first!
-source("compile_composition.R") 
-source("prep data before modeling.R")
+# Model LACO stem counts with storage effect and environmental fluctuations 
+# Multiple year seeding addition
+# Recursive modeling of seedbank to account for years where aboveground LACO is zero but seedbank persists to next year
+# Germination rate of LACO depends on the previous year's exotic grass cover
+# Germination rate is now a constant input, not an output.
 
-### CREATE SIMULATED DATA ###
+# load packages
+library(dplyr)
+library(rstan)
+library(StanHeaders)
 
-sim_n_pools <- 142 #number of pools
-sim_n_years <- 18 #years of data
-
-set.seed(124) #this helps create simulated values that are reproducible
-sim_obs_EG <- matrix(rpois(sim_n_pools*sim_n_years, lambda = 35), ncol=sim_n_years) #simulate exotic grass(EG) cover 
-set.seed(123)
-sim_obs_ERVA <- matrix(rpois(sim_n_pools*sim_n_years, lambda = 10), ncol=sim_n_years) #simulate ERVA cover 
-set.seed(122)
-sim_obs_NF <- matrix(rpois(sim_n_pools*sim_n_years, lambda = 25), ncol=sim_n_years) #simulate native forb (NF) cover 
-
-sim_aii <- as.vector(rbeta(sim_n_years, 3, 1)) #simulate alpha_LACO from beta distribution
-sim_a1 <- as.vector(rbeta(sim_n_years, 1, 2)) #simulate alpha_EG from beta distribution
-sim_a2 <- as.vector(rbeta(sim_n_years, 2, 5)) #simulate alpha_ERVA from beta distribution
-sim_a3 <- as.vector(rbeta(sim_n_years, 1, 5)) #simulate alpha_NF from beta distribution
-sim_lambda <- as.vector(rpois(sim_n_years, 40)) #simulate lambda from poisson distribution
-
-sim_seedtrt <- matrix(nrow = sim_n_pools, ncol = 3) #dummy seeding treatment
-sim_seedtrt[,1] <- sample(c(100,100,100,100), sim_n_pools, replace = TRUE)
-sim_seedtrt[,2] <- sample(c(0,100,100,100), sim_n_pools, replace = TRUE)
-sim_seedtrt[,3] <- sample(c(0,0,0,100), sim_n_pools, replace = TRUE)
-
-sim_obs_LACO <- matrix(nrow = sim_n_pools, ncol = sim_n_years) #empty matrix of LACO seed counts
-sim_mu <- matrix(nrow = sim_n_pools, ncol = sim_n_years) #empty matrix of mean LACO seed counts
-sim_stem_LACO <- matrix(nrow = sim_n_pools, ncol = sim_n_years) # empty metrix of LACO stem counts
-
-bh.formula <- function(sim_obs_LACO, EG, ERVA, NF, aii, a1, a2, a3, lambda, s, g){
-  sim_obs_LACO*lambda/(1+sim_obs_LACO*aii+EG*a1+ERVA*a2+NF*a3)+s*(1-g)*sim_obs_LACO/g
-} #this is the modified Beverton-Holt model we'll use for LACO stem counts
-
-#now simulate LACO stem counts
-bh.sim <- function(n_pools, seedtrt, EG, ERVA, NF, aii, a1, a2, a3, lambda, s, g, glow){
-  for(i in 1:nrow(sim_mu)){
-    for(j in 1:1){
-      sim_mu[i,j] <- 100
-      sim_stem_LACO[i,j] <- sim_mu[i,j] * g
-      sim_obs_LACO[i,j] <- rbinom(1,100,g)
-    }
-    for(j in 2:3){
-      if (EG[i,j-1]> 100){
-        g = glow
-      }
-      else{g = g}
-      sim_mu[i,j] <- bh.formula(sim_obs_LACO = sim_obs_LACO[i,j-1],
-                                EG = EG[i,j-1], ERVA = ERVA[i,j-1], NF = NF[i,j-1],
-                                aii = aii[j-1], a1 = a1[j-1], a2 = a2[j-1], a3 = a3[j-1],
-                                lambda = lambda[j-1], s = s, g = g)
-      sim_stem_LACO[i,j] <- sim_mu[i,j] *g
-      if(sim_stem_LACO[i,j] > 0){
-        sim_obs_LACO[i,j] <- rpois(1, lambda = (seedtrt[i,j] * g + sim_stem_LACO[i,j]))
-      }
-      else{
-        sim_obs_LACO[i,j] <- rpois(1, lambda = seedtrt[i,j] * g)
-      }
-    }
-    for(j in 4:ncol(sim_mu)){
-      if (EG[i,j-1]> 100){
-        g = glow
-      }
-      else{g = g}
-      if (sim_obs_LACO[i,j-1] > 0){
-        sim_mu[i,j] <- bh.formula(sim_obs_LACO = sim_obs_LACO[i,j-1],
-                                   EG = EG[i,j-1], ERVA = ERVA[i,j-1], NF = NF[i,j-1],
-                                   aii = aii[j-1], a1 = a1[j-1], a2 = a2[j-1], a3 = a3[j-1],
-                                   lambda = lambda[j-1], s = s, g = g)
-      }
-      else {
-        sim_mu[i,j] <- bh.formula(sim_obs_LACO = sim_obs_LACO[i,j-2]*lambda[j-2]/(1+sim_obs_LACO[i,j-2]*aii[j-2]+EG[i,j-2]*a1[j-2]+ERVA[i,j-2]*a2[j-2]+NF[i,j-2]*a3[j-2])+s*(1-g)*sim_obs_LACO[i,j-2]/g,
-                                  EG = EG[i,j-1], ERVA = ERVA[i,j-1], NF = NF[i,j-1],
-                                  aii = aii[j-1], a1 = a1[j-1], a2 = a2[j-1], a3 = a3[j-1],
-                                  lambda = lambda[j-1], s = s, g = g)
-      }
-      sim_stem_LACO[i,j] <- sim_mu[i,j] *g
-      if(sim_stem_LACO[i,j] > 0){
-        sim_obs_LACO[i,j] <- rpois(1, lambda = sim_mu[i,j]*g)
-      }
-      else{
-        sim_obs_LACO[i,j] = 0
-      }
-    }
-  }
-  return(sim_obs_LACO)
-}
-
-# List "true" lambda and alpha parameter values here. Start with constant parameters. 
-# After running the model, check that the model outputs are close to these values.
-sim_obs_LACO <- bh.sim(n_pools = sim_n_pools,
-                       seedtrt = sim_seedtrt,
-                       EG = sim_obs_EG,
-                       ERVA = sim_obs_ERVA,
-                       NF = sim_obs_NF,
-                       aii = sim_aii,
-                       a1 = sim_a1,
-                       a2 = sim_a2, 
-                       a3 = sim_a3,
-                       lambda = sim_lambda,
-                       s = 0.2,
-                       g = 0.7,
-                       glow = 0.2)
-
-hist(sim_obs_LACO) # Check distribution of simulated LACO
+# ### CREATE SIMULATED DATA ###
+# 
+# sim_n_pools <- 142 #number of pools
+# sim_n_years <- 18 #years of data
+# 
+# set.seed(124) #this helps create simulated values that are reproducible
+# sim_obs_EG <- matrix(rpois(sim_n_pools*sim_n_years, lambda = 35), ncol=sim_n_years) #simulate exotic grass(EG) cover 
+# set.seed(123)
+# sim_obs_ERVA <- matrix(rpois(sim_n_pools*sim_n_years, lambda = 10), ncol=sim_n_years) #simulate ERVA cover 
+# set.seed(122)
+# sim_obs_NF <- matrix(rpois(sim_n_pools*sim_n_years, lambda = 25), ncol=sim_n_years) #simulate native forb (NF) cover 
+# 
+# sim_aii <- as.vector(rbeta(sim_n_years, 3, 1)) #simulate alpha_LACO from beta distribution
+# sim_a1 <- as.vector(rbeta(sim_n_years, 1, 2)) #simulate alpha_EG from beta distribution
+# sim_a2 <- as.vector(rbeta(sim_n_years, 2, 5)) #simulate alpha_ERVA from beta distribution
+# sim_a3 <- as.vector(rbeta(sim_n_years, 1, 5)) #simulate alpha_NF from beta distribution
+# sim_lambda <- as.vector(rpois(sim_n_years, 40)) #simulate lambda from poisson distribution
+# 
+# sim_seedtrt <- matrix(nrow = sim_n_pools, ncol = 3) #dummy seeding treatment
+# sim_seedtrt[,1] <- sample(c(100,100,100,100), sim_n_pools, replace = TRUE)
+# sim_seedtrt[,2] <- sample(c(0,100,100,100), sim_n_pools, replace = TRUE)
+# sim_seedtrt[,3] <- sample(c(0,0,0,100), sim_n_pools, replace = TRUE)
+# 
+# sim_obs_LACO <- matrix(nrow = sim_n_pools, ncol = sim_n_years) #empty matrix of LACO seed counts
+# sim_mu <- matrix(nrow = sim_n_pools, ncol = sim_n_years) #empty matrix of mean LACO seed counts
+# sim_stem_LACO <- matrix(nrow = sim_n_pools, ncol = sim_n_years) # empty metrix of LACO stem counts
+# 
+# bh.formula <- function(sim_obs_LACO, EG, ERVA, NF, aii, a1, a2, a3, lambda, s, g){
+#   sim_obs_LACO*lambda/(1+sim_obs_LACO*aii+EG*a1+ERVA*a2+NF*a3)+s*(1-g)*sim_obs_LACO/g
+# } #this is the modified Beverton-Holt model we'll use for LACO stem counts
+# 
+# #now simulate LACO stem counts
+# bh.sim <- function(n_pools, seedtrt, EG, ERVA, NF, aii, a1, a2, a3, lambda, s, g, glow){
+#   for(i in 1:nrow(sim_mu)){
+#     for(j in 1:1){
+#       sim_mu[i,j] <- 100
+#       sim_stem_LACO[i,j] <- sim_mu[i,j] * g
+#       sim_obs_LACO[i,j] <- rbinom(1,100,g)
+#     }
+#     for(j in 2:3){
+#       if (EG[i,j-1]> 100){
+#         g = glow
+#       }
+#       else{g = g}
+#       sim_mu[i,j] <- bh.formula(sim_obs_LACO = sim_obs_LACO[i,j-1],
+#                                 EG = EG[i,j-1], ERVA = ERVA[i,j-1], NF = NF[i,j-1],
+#                                 aii = aii[j-1], a1 = a1[j-1], a2 = a2[j-1], a3 = a3[j-1],
+#                                 lambda = lambda[j-1], s = s, g = g)
+#       sim_stem_LACO[i,j] <- sim_mu[i,j] *g
+#       if(sim_stem_LACO[i,j] > 0){
+#         sim_obs_LACO[i,j] <- rpois(1, lambda = (seedtrt[i,j] * g + sim_stem_LACO[i,j]))
+#       }
+#       else{
+#         sim_obs_LACO[i,j] <- rpois(1, lambda = seedtrt[i,j] * g)
+#       }
+#     }
+#     for(j in 4:ncol(sim_mu)){
+#       if (EG[i,j-1]> 100){
+#         g = glow
+#       }
+#       else{g = g}
+#       if (sim_obs_LACO[i,j-1] > 0){
+#         sim_mu[i,j] <- bh.formula(sim_obs_LACO = sim_obs_LACO[i,j-1],
+#                                    EG = EG[i,j-1], ERVA = ERVA[i,j-1], NF = NF[i,j-1],
+#                                    aii = aii[j-1], a1 = a1[j-1], a2 = a2[j-1], a3 = a3[j-1],
+#                                    lambda = lambda[j-1], s = s, g = g)
+#       }
+#       else {
+#         sim_mu[i,j] <- bh.formula(sim_obs_LACO = sim_obs_LACO[i,j-2]*lambda[j-2]/(1+sim_obs_LACO[i,j-2]*aii[j-2]+EG[i,j-2]*a1[j-2]+ERVA[i,j-2]*a2[j-2]+NF[i,j-2]*a3[j-2])+s*(1-g)*sim_obs_LACO[i,j-2]/g,
+#                                   EG = EG[i,j-1], ERVA = ERVA[i,j-1], NF = NF[i,j-1],
+#                                   aii = aii[j-1], a1 = a1[j-1], a2 = a2[j-1], a3 = a3[j-1],
+#                                   lambda = lambda[j-1], s = s, g = g)
+#       }
+#       sim_stem_LACO[i,j] <- sim_mu[i,j] *g
+#       if(sim_stem_LACO[i,j] > 0){
+#         sim_obs_LACO[i,j] <- rpois(1, lambda = sim_mu[i,j]*g)
+#       }
+#       else{
+#         sim_obs_LACO[i,j] = 0
+#       }
+#     }
+#   }
+#   return(sim_obs_LACO)
+# }
+# 
+# # List "true" lambda and alpha parameter values here. Start with constant parameters. 
+# # After running the model, check that the model outputs are close to these values.
+# sim_obs_LACO <- bh.sim(n_pools = sim_n_pools,
+#                        seedtrt = sim_seedtrt,
+#                        EG = sim_obs_EG,
+#                        ERVA = sim_obs_ERVA,
+#                        NF = sim_obs_NF,
+#                        aii = sim_aii,
+#                        a1 = sim_a1,
+#                        a2 = sim_a2, 
+#                        a3 = sim_a3,
+#                        lambda = sim_lambda,
+#                        s = 0.2,
+#                        g = 0.7,
+#                        glow = 0.2)
+# 
+# hist(sim_obs_LACO) # Check distribution of simulated LACO
 
 ### CREATE A STAN MODEL ###
 
@@ -270,76 +276,33 @@ alpha_NF_mean <- as.data.frame(get_posterior_mean(BH_fit, pars = c("alpha_NF")))
 lambda_mean <- as.data.frame(get_posterior_mean(BH_fit, pars = c("lambda")))
 s_mean <- as.data.frame(get_posterior_mean(BH_fit, pars = c("survival_LACO")))
 
-### COMPARE OBSERVED AND PREDICTED LACO ###
+# ### COMPARE OBSERVED AND PREDICTED LACO ###
 library(tidyr)
 library(ggplot2)
 
-# #Option 1: use simulated data
-# #make a table of predicted LACO from estimated parameters
-# predicted_LACO_sim <- bh.sim(n_pools = sim_n_pools,
-#                          seedtrt = sim_seedtrt,
-#                          EG = sim_obs_EG,
-#                          ERVA = sim_obs_ERVA,
-#                          NF = sim_obs_NF,
-#                          aii = alpha_LACO_mean[,5],
-#                          a1 = alpha_EG_mean[,5],
-#                          a2 = alpha_ERVA_mean[,5], 
-#                          a3 = alpha_NF_mean[,5],
-#                          lambda = lambda_mean[,5],
-#                          s = s_mean[,5],
-#                          g = 0.7,
-#                          glow = 0.2)
-# 
-# #plot simulated LACOdens vs predicted_LACO_sim to check model fit
-# colnames(predicted_LACO_sim) <- c(1:18)
-# predicted_LACO_sim <- as.data.frame(predicted_LACO_sim) %>% 
-#   mutate(Pool = row_number()) %>%
-#   gather(`1`,`2`,`3`,`4`,`5`,`6`,`7`,`8`,`9`,`10`,`11`,`12`,`13`,`14`,`15`,`16`,`17`,`18`, key = time, value = predicted_LACO)
-# colnames(sim_obs_LACO) <- c(1:18)
-# sim_obs_LACO <- as.data.frame(sim_obs_LACO) %>% 
-#   mutate(Pool = row_number()) %>%
-#   gather(`1`,`2`,`3`,`4`,`5`,`6`,`7`,`8`,`9`,`10`,`11`,`12`,`13`,`14`,`15`,`16`,`17`,`18`, key = time, value = sim_LACO)
-# join_sim_LACO <- left_join(predicted_LACO_sim, sim_obs_LACO, by = c("Pool", "time"))
-# 
-# summary(lm(predicted_LACO ~ sim_LACO, data = join_sim_LACO)) #R2 = 0.8644
-# ggplot(join_sim_LACO, aes(x = sim_LACO, y = predicted_LACO)) +
-#   geom_point() +
-#   annotate("text", label = "R^2 = 0.8644", x = 50, y = 150) + #looks like a good fit 
-#   geom_smooth(method = "lm") +
-#   labs(x = "simulated LACO counts", y = "predicted LACO counts")
-# 
-# #plot timeseries of simulated LACOdens and predicted_LACO_sim
-# long_join_sim <- join_sim_LACO %>% gather(`predicted_LACO`, `sim_LACO`, key = type, value = LACO)
-# ggplot(long_join_sim, aes(x = time, y = LACO, color = type)) +
-#   geom_jitter() +
-#   labs(y = "LACO count") +
-#   scale_color_discrete(breaks = c("predicted_LACO", "sim_LACO"),
-#                        labels = c("predicted", "simulated"))
-
-#Option 2: use real data
 predicted_LACO <- bh.sim(n_pools = n_pools,
-                      seedtrt = as.matrix(seedtrt[,4:6]),
-                      EG = as.matrix(sumEGcover),
-                      ERVA = as.matrix(ERVAdens),
-                      NF = as.matrix(sumNFcover),
-                      aii = alpha_LACO_mean[,5],
-                      a1 = alpha_EG_mean[,5],
-                      a2 = alpha_ERVA_mean[,5], 
-                      a3 = alpha_NF_mean[,5],
-                      lambda = lambda_mean[,5],
-                      s = s_mean[,5],
-                      g = 0.7,
-                      glow = 0.2)
+                         seedtrt = as.matrix(seedtrt[,4:6]),
+                         EG = as.matrix(sumEGcover),
+                         ERVA = as.matrix(ERVAdens),
+                         NF = as.matrix(sumNFcover),
+                         aii = alpha_LACO_mean[,5],
+                         a1 = alpha_EG_mean[,5],
+                         a2 = alpha_ERVA_mean[,5],
+                         a3 = alpha_NF_mean[,5],
+                         lambda = lambda_mean[,5],
+                         s = s_mean[,5],
+                         g = 0.7,
+                         glow = 0.2)
 
-#plot LACOdens vs predicted_LACO for modelfit
+# #plot LACOdens vs predicted_LACO for modelfit
 colnames(predicted_LACO) <- c("2000", "2001", "2002", "2003", "2004", "2005", "2006",
                               "2007", "2008", "2009", "2010", "2011", "2012", "2013",
                               "2014", "2015", "2016", "2017")
-predicted_LACO <- as.data.frame(predicted_LACO) %>% 
+predicted_LACO <- as.data.frame(predicted_LACO) %>%
   mutate(Pool = row_number()) %>%
   gather(`2000`,`2001`,`2002`,`2003`,`2004`,`2005`,`2006`, `2007`, `2008`, `2009`, `2010`,
          `2011`,`2012`,`2013`,`2014`,`2015`,`2016`,`2017`, key = time, value = predicted_LACO)
-obs_LACO <- LACOdens %>% 
+obs_LACO <- LACOdens %>%
   mutate(Pool = row_number()) %>%
   gather(`2000`,`2001`,`2002`,`2003`,`2004`,`2005`,`2006`,`2007`,`2008`,`2009`,`2010`,
          `2011`,`2012`,`2013`,`2014`,`2015`,`2016`,`2017`, key = time, value = observed_LACO)
@@ -366,13 +329,140 @@ nonzero <- join_real_LACO %>%
   filter(observed_LACO == 0) %>%
   filter(predicted_LACO > 0) #851 out of 2556 observations
 
-#plot timeseries of LACOdens and predicted_LACO 
+#plot timeseries of LACOdens and predicted_LACO
 long_join_real <- join_real_LACO %>% gather(`predicted_LACO`, `observed_LACO`, key = type, value = LACO)
-ggplot(long_join_real, aes(x = time, y = log(LACO), color = type)) +
+ggplot(long_join_real %>% filter(time < 2016), aes(x = time, y = LACO, color = type)) +
   geom_jitter() +
-  labs(y = "log LACO count") +
+  theme(text = element_text(size=16),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.background = element_blank(),
+        axis.line = element_line(colour = "black"),
+        legend.position = c(0.2,0.9))+
+  scale_y_log10()+
+  ylab(bquote(LACO~Density~(stems/m^2)))+
+  xlab(bquote(Year)) +
   scale_color_discrete(breaks = c("predicted_LACO", "observed_LACO"),
-                       labels = c("predicted", "observed"))
+                       labels = c("Simulated", "Observed"), name = " ")
 
+#COMPARE SEEDING TREATMENTS
+BH_fit_AB <- sampling(BH_model,
+                      data = list(n_pools = n_pools_AB,
+                                  n_years = n_years_AB,
+                                  obs_LACO = LACOdens_AB,
+                                  obs_EG = sumEGcover_AB,
+                                  obs_ERVA = ERVAdens_AB,
+                                  obs_NF = sumNFcover_AB,
+                                  seeds_added = seedtrt_AB[,4:6],
+                                  low_germ_LACO = 0.2,
+                                  high_germ_LACO = 0.7), 
+                      iter= 1000)
 
+BH_fit_BA <- sampling(BH_model,
+                      data = list(n_pools = n_pools_BA,
+                                  n_years = n_years_BA,
+                                  obs_LACO = LACOdens_BA,
+                                  obs_EG = sumEGcover_BA,
+                                  obs_ERVA = ERVAdens_BA,
+                                  obs_NF = sumNFcover_BA,
+                                  seeds_added = seedtrt_BA[,4:6],
+                                  low_germ_LACO = 0.2,
+                                  high_germ_LACO = 0.7), 
+                      iter= 1000)
 
+BH_fit_LALA <- sampling(BH_model,
+                        data = list(n_pools = n_pools_LALA,
+                                    n_years = n_years_LALA,
+                                    obs_LACO = LACOdens_LALA,
+                                    obs_EG = sumEGcover_LALA,
+                                    obs_ERVA = ERVAdens_LALA,
+                                    obs_NF = sumNFcover_LALA,
+                                    seeds_added = seedtrt_LALA[,4:6],
+                                    low_germ_LACO = 0.2,
+                                    high_germ_LACO = 0.7), 
+                        iter= 1000)
+
+BH_fit_LANo <- sampling(BH_model,
+                        data = list(n_pools = n_pools_LANo,
+                                    n_years = n_years_LANo,
+                                    obs_LACO = LACOdens_LANo,
+                                    obs_EG = sumEGcover_LANo,
+                                    obs_ERVA = ERVAdens_LANo,
+                                    obs_NF = sumNFcover_LANo,
+                                    seeds_added = seedtrt_LANo[,4:6],
+                                    low_germ_LACO = 0.2,
+                                    high_germ_LACO = 0.7), 
+                        iter= 1000)
+
+#COMPARE POOL SIZES
+BH_fit_Pool_s <- sampling(BH_model,
+                          data = list(n_pools = n_pools_s,
+                                      n_years = n_years_s,
+                                      obs_LACO = LACOdens_s,
+                                      obs_EG = sumEGcover_s,
+                                      obs_ERVA = ERVAdens_s,
+                                      obs_NF = sumNFcover_s,
+                                      seeds_added = seedtrt_s[,4:6],
+                                      low_germ_LACO = 0.2,
+                                      high_germ_LACO = 0.7), 
+                          iter= 1000)
+
+BH_fit_Pool_m <- sampling(BH_model,
+                          data = list(n_pools = n_pools_m,
+                                      n_years = n_years_m,
+                                      obs_LACO = LACOdens_m,
+                                      obs_EG = sumEGcover_m,
+                                      obs_ERVA = ERVAdens_m,
+                                      obs_NF = sumNFcover_m,
+                                      seeds_added = seedtrt_m[,4:6],
+                                      low_germ_LACO = 0.2,
+                                      high_germ_LACO = 0.7), 
+                          iter= 1000)
+
+BH_fit_Pool_l <- sampling(BH_model,
+                          data = list(n_pools = n_pools_l,
+                                      n_years = n_years_l,
+                                      obs_LACO = LACOdens_l,
+                                      obs_EG = sumEGcover_l,
+                                      obs_ERVA = ERVAdens_l,
+                                      obs_NF = sumNFcover_l,
+                                      seeds_added = seedtrt_l[,4:6],
+                                      low_germ_LACO = 0.2,
+                                      high_germ_LACO = 0.7), 
+                          iter= 1000)
+
+BH_fit_depth_s <- sampling(BH_model,
+                           data = list(n_pools = n_depth_s,
+                                       n_years = n_years_depth_s,
+                                       obs_LACO = LACOdens_depth_s,
+                                       obs_EG = sumEGcover_depth_s,
+                                       obs_ERVA = ERVAdens_depth_s,
+                                       obs_NF = sumNFcover_depth_s,
+                                       seeds_added = seedtrt_depth_s[,4:6],
+                                       low_germ_LACO = 0.2,
+                                       high_germ_LACO = 0.7), 
+                           iter= 1000)
+
+BH_fit_depth_m <- sampling(BH_model,
+                           data = list(n_pools = n_depth_m,
+                                       n_years = n_years_depth_m,
+                                       obs_LACO = LACOdens_depth_m,
+                                       obs_EG = sumEGcover_depth_m,
+                                       obs_ERVA = ERVAdens_depth_m,
+                                       obs_NF = sumNFcover_depth_m,
+                                       seeds_added = seedtrt_depth_m[,4:6],
+                                       low_germ_LACO = 0.2,
+                                       high_germ_LACO = 0.7), 
+                           iter= 1000)
+
+BH_fit_depth_d <- sampling(BH_model,
+                           data = list(n_pools = n_depth_d,
+                                       n_years = n_years_depth_d,
+                                       obs_LACO = LACOdens_depth_d,
+                                       obs_EG = sumEGcover_depth_d,
+                                       obs_ERVA = ERVAdens_depth_d,
+                                       obs_NF = sumNFcover_depth_d,
+                                       seeds_added = seedtrt_depth_d[,4:6],
+                                       low_germ_LACO = 0.2,
+                                       high_germ_LACO = 0.7), 
+                           iter= 1000)
